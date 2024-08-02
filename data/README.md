@@ -56,4 +56,5 @@ The data file must have the following columns:\
 "mode_wind_direction"\
 "elevation"\
 "air_density"\
-"pressure_zero""missing_weather"\
+"pressure_zero"\
+"missing_weather"
