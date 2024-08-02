@@ -1,11 +1,11 @@
 # Atmospheric Conditions and Golf
-## [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
-## [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
-## [Justin Ehrlich](https://falk.syr.edu/people/ehrlich-justin/)
-## Collin Kneiss
-## [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
-## [Nick Riccardi](https://ischool.syr.edu/nick-riccardi//)
-### Interactive Weather Calculator: https://sportdataviz.syr.edu/Golf/
+### [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
+### [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
+### [Justin Ehrlich](https://falk.syr.edu/people/ehrlich-justin/)
+### Collin Kneiss
+### [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
+### [Nick Riccardi](https://ischool.syr.edu/nick-riccardi//)
+## Interactive Weather Calculator: https://sportdataviz.syr.edu/Golf/
 
 The data is all available on public websites. You must include `data/pga_tour_data_w_weather.csv` before running `Analysis.RMD`. \
 \
