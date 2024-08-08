@@ -1,35 +1,30 @@
 # Atmospheric Conditions and Golf
-### [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
-### [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
 ### [Justin Ehrlich](https://falk.syr.edu/people/ehrlich-justin/)
-### Collin Kneiss
-### [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
+### [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
 ### [Nick Riccardi](https://ischool.syr.edu/nick-riccardi//)
+### [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
+### [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
+
 ## Interactive Weather Calculator: https://sportdataviz.syr.edu/Golf/
 
-The data is all available on public websites. You must include `data/pga_tour_data_w_weather.csv` before running `Analysis.RMD`. \
+The data is all available on public websites. We recommend wunderground.com for atmospheric conditions data and datagolf.com for performance data. Once the data is present, you can run `prep_data.ipynb`, which takes the input files and creates `data/pga_tour_data_w_weather.csv`.  Then you can run `Analysis.RMD` for analysis of the data. \
 \
-The data file must have the following columns:\
- "tour"\
- "year"\
- "season"\
- "event_completed"\
- "event_name"\
- "mult_locations"\
- "event_id"\
- "player_name"\
- "dg_id"\
- "fin_text"\
- "round_num"\
- "round_date"\
- "course_name"\
-"course_city_code"\
+The `tour_data_pga.csv` file, which contains tour performance data, must have the following columns:\
+"tour"\
+"year"\
+"season"\
+"event_completed"\
+"event_name"\
+"event_id"\
+"player_name"\
+"dg_id"\
+"fin_text"\
+"round_num"\
+"course_name"\
 "course_num"\
 "course_par"\
-"par_avg_time"\
 "start_hole"\
 "teetime"\
-"teetimeinmin"\
 "round_score"\
 "sg_putt"\
 "sg_arg"\
@@ -45,16 +40,20 @@ The data file must have the following columns:\
 "prox_fw"\
 "great_shots"\
 "poor_shots"\
-"avg_temperature"\
-"avg_dew_point"\
-"avg_wind_speed"\
-"avg_wind_gust"\
-"avg_pressure"\
-"avg_humidity"\
-"sum_precipitation"\
-"mode_condition"\
-"mode_wind_direction"\
-"elevation"\
-"air_density"\
-"pressure_zero"\
-"missing_weather"
+\
+\
+The `pga_weather.csv` file, which contains atmospheric conditions, must have the following columns:\
+"Time"\
+"TimeinMin"\
+"Temperature"\
+"Dew Point"\
+"Humidity"\
+"Wind"\
+"Wind Speed"\
+"Wind Gust"\
+"Pressure"\
+"Precip."\
+"Condition"\
+"City"\
+"Date"\
+"concat"\

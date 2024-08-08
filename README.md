@@ -1,10 +1,9 @@
 # Atmospheric Conditions and Golf
-### [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
-### [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
 ### [Justin Ehrlich](https://falk.syr.edu/people/ehrlich-justin/)
-### Collin Kneiss
-### [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
+### [Rodney Paul](https://falk.syr.edu/people/paul-rodney/)
 ### [Nick Riccardi](https://ischool.syr.edu/nick-riccardi//)
+### [Christopher Cain](https://www.unlv.edu/people/christopher-cain)
+### [Junghoon Lee](https://www.unlv.edu/people/junghoon-lee)
 ## Interactive Weather Calculator: https://sportdataviz.syr.edu/Golf/
 Professional athletes are incredibly talented and motivated individuals who work tirelessly toward the goal of excellence in their given sport.  The amount of skill and dedication it takes to make it to the highest level of a sport is often difficult for amateurs and non-athletes to fathom.  Among the elite athletes, the difference between qualifying, advancing, and winning or losing is often small.  Top athletes are often evenly matched with the slightest mistake or favorable situation being the difference between success and failure.\
 \
