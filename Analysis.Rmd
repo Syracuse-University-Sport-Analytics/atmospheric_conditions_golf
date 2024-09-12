@@ -1,0 +1,410 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-05-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(sjPlot)
+library(ggeffects)
+library(ggpubr)
+library(car)
+library(vtable)
+library(sandwich)
+
+library(lubridate)
+options(scipen=999)
+
+wet_bulb_temperature <- function(T, RH) {
+  # T is temperature in degrees Fahrenheit
+  #convert to Celsius
+  T <- (T - 32) * 5/9
+  
+  Tw <- T * atan(0.151977 * sqrt(RH + 8.313659)) + 
+        atan(T + RH) - 
+        atan(RH - 1.676331) + 
+        0.00391838 * RH^1.5 * atan(0.023101 * RH) - 
+        4.686035
+  Tw <- (Tw * 9/5) + 32
+  return(Tw)
+}
+```
+
+```{r}
+pga_tour_data_w_weather <- read_csv("data/pga_tour_data_w_weather.csv")
+
+pga_tour_data_w_weather %>% mutate(elevation = elevation * 3.28084) -> pga_tour_data_w_weather
+pga_tour_data_w_weather %>% mutate(air_density = 0.0624279606 * air_density) -> pga_tour_data_w_weather
+
+pga_tour_data_w_weather %>% mutate(avg_wet_bulb_temperature = wet_bulb_temperature(avg_temperature, avg_humidity)) -> pga_tour_data_w_weather
+
+pga_tour_data_w_weather %>% filter(mult_locations != 1, missing_weather != 1, !is.na(round_score)) -> round_level_data
+
+round_level_data %>% group_by(event_name, year, round_num) %>% mutate(average_round_score = mean(round_score, na.rm=T)) %>% ungroup() %>% mutate(average_field_score = mean(round_score, na.rm=T), event_score_premium = average_round_score-average_field_score, 
+                                                                                                                                                 true_sg_total = sg_total + event_score_premium,
+                                                                                                                                                 true_sg_ott = sg_ott + event_score_premium/4,
+                                                                                                                                                 true_sg_app = sg_app + sg_app - event_score_premium/4,
+                                                                                                                                                 true_sg_arg = sg_arg + event_score_premium/4,
+                                                                                                                                                 true_sg_putt = sg_putt + event_score_premium/4) %>% ungroup()-> round_level_data #true strokes gained was first calculated by using the summation of the 4 baseline functions. These are based upon the entire field across seasons. The strokes gained is then calculated by dividing out the average of the event's round's true strokes gained, which provides a strokes gained above the current field of the event's round. I back this out by subtracting the event's score premium from the strokes gained to get the true strokes gained. The event's score premium is the average round's strokes minus the average field's strokes for the current event's round. 
+
+player_fe <- paste0("player_name", round_level_data$player_name %>% unique())
+player_fe <- c(player_fe, paste0("factor(season)", round_level_data$year %>% unique()))
+player_fe <- c(player_fe, paste0("year [", round_level_data$year %>% unique(), "]"))
+player_fe <- c(player_fe, paste0("factor(year)", round_level_data$year %>% unique()))
+player_fe <- c(player_fe, paste0("factor(round_num)", round_level_data$round_num %>% unique()))
+player_fe <- c(player_fe, paste0("factor(player_name)", round_level_data$player_name %>% unique()))
+
+
+round_level_data %>% mutate(round_date = lubridate::mdy(round_date)) -> round_level_data
+
+round_level_data %>% arrange(round_date,round_num, player_name) %>% group_by(player_name, year) %>% mutate(round_score_lag = lag(round_score), true_sg_total_lag = lag(true_sg_total)) %>% ungroup()-> round_level_data
+```
+
+
+```{r}
+round_level_data %>% lm(formula = true_sg_total ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + factor(round_num) + player_name, data = .) -> air_density_model_true_sg_total
+air_density_model_true_sg_total %>% summary()
+
+round_level_data %>% lm(formula = true_sg_total ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + factor(round_num) + player_name, data = .) -> air_density_components_model_true_sg_total
+air_density_components_model_true_sg_total %>% summary()
+
+round_level_data %>% lm(formula = true_sg_total ~ avg_pressure + avg_wet_bulb_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + player_name, data = .) -> air_density_components_wet_bulb_model_true_sg_total
+air_density_components_wet_bulb_model_true_sg_total %>% summary()
+
+tab_model(air_density_model_true_sg_total, air_density_components_model_true_sg_total, air_density_components_wet_bulb_model_true_sg_total, digits = 4, rm.terms = player_fe, file = "tables/wet_bulb.html", vcov.fun = "CL", vcov.args = list(type = "HC1"), show.se = TRUE)
+
+
+round_level_data %>% ggplot(aes(x = air_density, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Air Density", x = "Air Density", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_pressure, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Pressure", x = "Pressure", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_temperature, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Temperature", x = "Temperature (c)", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_dew_point, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Dew Point", x = "Dew Point", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_wind_speed, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Wind Speed", x = "Wind Speed", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_wind_gust, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Wind Gust", x = "Wind Gust", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = avg_humidity, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Humidity", x = "Humidity", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = sum_precipitation, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Precipitation", x = "Precipitation", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = teetimeinmin, y = true_sg_total)) + geom_point() + geom_smooth(method = "lm") + labs(title = "True SG Total vs Tee Time", x = "Tee Time", y = "True SG Total") + theme_minimal()
+round_level_data %>% ggplot(aes(x = factor(round_num), y = true_sg_total)) + geom_boxplot() + labs(title = "True SG Total vs Round Number", x = "Round Number", y = "True SG Total") + theme_minimal()
+
+#now do all of this in a facet grid based upon weather attribute
+round_level_data %>% gather(key = "weather_attribute", value = "value", air_density, avg_pressure, avg_temperature, avg_dew_point, avg_wind_speed, avg_wind_gust, avg_humidity, sum_precipitation, elevation, teetimeinmin) -> weather_attributes
+
+weather_attributes%>% ggplot(aes(x = value, y = true_sg_total)) + geom_point(alpha = 0.05, size = .05) + geom_smooth(method = "lm") + facet_wrap(~weather_attribute, scales = "free") + labs(title = "True SG Total vs Weather Attributes", x = "Value", y = "True SG Total") + theme_minimal() -> sg_total_weather_attributes_plot
+
+
+weather_attributes %>% gather(key = "sg_type", value = "true_sg", true_sg_ott, true_sg_app, true_sg_arg, true_sg_putt) -> weather_attributes_sg_types
+
+weather_attributes_sg_types %>% ggplot(aes(x = value, y = true_sg, color = sg_type)) + geom_smooth(method = "lm") + facet_wrap(~weather_attribute, scales = "free") + labs(title = "True SG Total vs Weather Attributes", x = "Value", y = "True SG") + theme_minimal() -> sg_types_weather_attributes_plot
+
+pdf("visualizations/sg_total_weather_attributes_plot.pdf")
+sg_total_weather_attributes_plot
+sg_types_weather_attributes_plot
+dev.off()
+
+weather_attributes_sg_types %>% ggplot(aes(x = value, y = true_sg, color = sg_type))+ geom_point(alpha = 0.005, size = .005) + geom_smooth(method = "lm") + facet_wrap(~weather_attribute, scales = "free") + labs(title = "True SG Total vs Weather Attributes", x = "Value", y = "True SG") + theme_minimal() -> sg_types_weather_attributes_plot_full
+
+png("visualizations/sg_total_weather_attributes_plot.png", width = 1200, height = 1200, res = 128)
+sg_total_weather_attributes_plot
+dev.off()
+
+png("visualizations/sg_types_weather_attributes_plot.png", width = 1200, height = 1200, res = 128)
+sg_types_weather_attributes_plot
+dev.off()
+
+weather_attributes_sg_types %>% filter(weather_attribute != "avg_pressure", weather_attribute != "avg_temperature", weather_attribute != "elevation") %>% lm(formula = true_sg ~ value:weather_attribute:sg_type, data = .) -> sg_type_weather_air_density_attribute_interaction_model
+
+weather_attributes_sg_types %>% filter(weather_attribute != "air_density") %>% lm(formula = true_sg ~ value:weather_attribute:sg_type, data = .) -> sg_type_weather_air_density_components_attribute_interaction_model
+
+
+round_level_data %>% gather(key = "weather_attribute", value = "value", air_density, avg_pressure, avg_temperature, avg_dew_point, avg_wind_speed, avg_wind_gust, avg_humidity, sum_precipitation) -> weather_attributes_minus_tee_time
+
+weather_attributes_minus_tee_time %>% ggplot(aes(x=teetimeinmin, y=value)) + geom_point(alpha = 0.05, size = .05) + geom_smooth(method = "lm", formula = y ~ x + I(x^2)) + facet_wrap(~weather_attribute, scales = "free") + labs(title = "Tee Time vs Weather Attributes", x = "Tee Time", y = "Value") + theme_minimal() -> tee_time_weather_attributes_plot
+
+```
+
+
+
+
+summary tables
+```{r}
+
+pdf("visualizations/summary.pdf")
+round_level_data %>% ggplot(aes(x=true_sg_total)) + geom_histogram() + theme_minimal()
+dev.off()
+round_level_data %>% mutate(year = as.factor(year), round_num = as.factor(round_num)) %>% ungroup() %>% dplyr::select(true_sg_total, driving_dist, air_density, avg_pressure, avg_temperature, elevation, avg_dew_point, avg_wind_speed, avg_wind_gust, avg_humidity, sum_precipitation, teetimeinmin, round_num, year, player_name) %>% group_by(round_num) %>% st(summ= c('notNA(x)', 'mean(x)',   'sd(x)', 'min(x)', 'max(x)'), digits = 3, numformat = NA)
+                                                 
+```
+
+
+
+
+vif
+```{r}
+round_level_data %>% lm(formula = round_score ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation, data = .)%>% vif()
+
+round_level_data %>% lm(formula = round_score ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation, data = .) %>% vif()
+```
+
+
+
+player  FE
+```{r}
+
+
+round_level_data %>% lm(formula = round_score ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + factor(round_num) + factor(year)+ player_name, data = .) -> air_density_model_round_score_no_teetime
+#air_density_model_round_score %>% summary()
+saveRDS(air_density_model_round_score_no_teetime,"models/air_density_components_model_round_score_no_teetime.RDS")
+
+
+round_level_data %>% lm(formula = round_score ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation  + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_round_score_no_teetime
+#air_density_components_model_round_score %>% summary()
+saveRDS(air_density_components_model_round_score_no_teetime,"models/air_density_components_model_round_score_no_teetime.RDS")
+
+
+round_level_data %>% lm(formula = round_score ~ elevation + avg_temperature + avg_humidity + avg_pressure + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_round_score
+#air_density_components_model_round_score %>% summary()
+saveRDS(air_density_components_model_round_score,"models/air_density_components_model_round_score_player_FE.RDS")
+
+round_level_data %>% lm(formula = round_score ~ air_density + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_round_score
+#air_density_model_round_score %>% summary()
+saveRDS(air_density_model_round_score,"models/air_density_model_round_score_player_FE.RDS")
+
+
+
+round_level_data %>% lm(formula = true_sg_total ~ air_density + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_sg_total 
+#air_density_model_sg_total %>% summary()
+saveRDS(air_density_model_sg_total,"models/air_density_model_sg_total_player_FE.RDS")
+
+round_level_data %>% lm(formula = true_sg_total ~ elevation + avg_temperature + avg_humidity + avg_pressure + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_sg_total
+#air_density_components_model_sg_total %>% summary()
+saveRDS(air_density_components_model_sg_total,"models/air_density_components_model_sg_total_player_FE.RDS")
+
+
+
+round_level_data %>% group_by(year, event_name, round_num) %>% summarize(true_sg_total = mean(true_sg_total, na.rm=T), elevation = mean(elevation, na.rm=T), avg_temperature = mean(avg_temperature, na.rm=T), avg_humidity = mean(avg_humidity, na.rm=T), avg_pressure = mean(avg_pressure, na.rm=T), avg_dew_point = mean(avg_dew_point, na.rm=T), avg_wind_speed = mean(avg_wind_speed, na.rm=T), avg_wind_gust = mean(avg_wind_gust, na.rm=T), sum_precipitation = mean(sum_precipitation, na.rm=T), air_density = mean(air_density, na.rm=T), teetimeinmin = mean(teetimeinmin, na.rm=T), avg_wet_bulb_temperature = mean(avg_wet_bulb_temperature, na.rm=T)) -> avg_round_level_data
+
+
+
+saveRDS(round_level_data, "data/round_level_data.RDS")
+saveRDS(avg_round_level_data, "data/avg_round_level_data.RDS")
+
+avg_round_level_data %>% lm(formula = true_sg_total ~ elevation + avg_wet_bulb_temperature + avg_humidity + avg_pressure + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + factor(year), data = .) -> air_density_components_model_sg_total_mean
+
+
+air_density_components_model_sg_total <- readRDS("models/air_density_components_model_sg_total_player_FE.RDS")
+
+air_density_model_sg_total <- readRDS("models/air_density_model_sg_total_player_FE.RDS")
+
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust.doc", vcov.fun = "CL", vcov.args = list(type = "HC1"), show.se = TRUE) 
+
+
+
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust.html", vcov.fun = "CL", vcov.args = list(type = "HC1"), show.se = TRUE)
+
+
+
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust_hc3.doc", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE) 
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust_hc3.html", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE)
+
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust_hc0.doc", vcov.fun = "CL", vcov.args = list(type = "HC0"), show.se = TRUE) 
+tab_model(air_density_components_model_sg_total, air_density_model_sg_total, digits = 4, rm.terms = player_fe, file = "tables/sg_total_robust_hc0.html", vcov.fun = "CL", vcov.args = list(type = "HC0"), show.se = TRUE)
+
+
+round_level_data %>% filter(!is.na(driving_dist)) -> round_level_data_driving
+
+round_level_data_driving %>% mutate(player_name = factor(player_name)) -> round_level_data_driving
+round_level_data_driving %>% mutate(player_id = as.numeric(player_name)) -> round_level_data_driving
+
+player_fe <- c(player_fe, paste0("factor(player_id)", round_level_data_driving$player_id %>% unique()))
+
+round_level_data_driving %>% lm(formula = driving_dist ~ elevation + avg_temperature + avg_humidity + avg_pressure + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_driving_dist
+
+saveRDS(air_density_components_model_driving_dist, "models/air_density_components_model_driving_dist_player_FE.RDS")
+
+round_level_data_driving %>% lm(formula = driving_dist ~ air_density + avg_dew_point + avg_wind_speed + avg_wind_gust + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_driving_dist 
+
+saveRDS(air_density_model_driving_dist,"models/air_density_model_driving_dist_player_FE.RDS")
+
+
+
+air_density_components_model_driving_dist <- readRDS("models/air_density_components_model_driving_dist_player_FE.RDS")
+
+air_density_model_driving_dist <- readRDS("models/air_density_model_driving_dist_player_FE.RDS")
+
+tab_model(air_density_components_model_driving_dist, air_density_model_driving_dist, digits = 4, rm.terms = player_fe, file = "tables/driving_dist_robust.doc", vcov.fun = "CL", vcov.args = list(type = "HC1"), show.se = TRUE) 
+
+
+tab_model(air_density_components_model_driving_dist, air_density_model_driving_dist, digits = 4, rm.terms = player_fe, file = "tables/driving_dist_robust.html", vcov.fun = "CL", vcov.args = list(type = "HC1"), show.se = TRUE)
+
+```
+
+
+player FE visualizations
+```{r}
+me_plots <- function(model, terms, interaction = NULL){
+  plots <- list()
+  for(term in terms){
+    result <- predict_response(model, terms = c(term,interaction))
+    plots[[term]] <- plot(result) + ggtitle("")
+
+  }
+  return(plots)
+}
+
+air_density_model_sg_total <- readRDS("models/air_density_model_sg_total_player_FE.RDS")
+
+air_density_components_model_sg_total <- readRDS("models/air_density_components_model_sg_total_player_FE.RDS")
+
+air_density_model_driving_dist <- readRDS("models/air_density_model_driving_dist_player_FE.RDS")
+
+air_density_components_model_driving_dist <- readRDS("models/air_density_components_model_driving_dist_player_FE.RDS")
+
+
+
+
+
+pdf("visualizations/driving_dist_ME.pdf")
+
+air_density_model_driving_dist_plots <- me_plots(air_density_model_driving_dist, c("air_density", "avg_dew_point", "avg_wind_speed", "avg_wind_gust", "sum_precipitation"))
+
+ggarrange(plotlist = air_density_model_driving_dist_plots)
+
+air_density_components_model_driving_dist_plots <- me_plots(air_density_components_model_driving_dist, c("elevation","avg_temperature", "avg_humidity" , "avg_pressure" , "avg_dew_point" ,"avg_wind_speed" , "avg_wind_gust", "sum_precipitation"))
+
+ggarrange(plotlist = air_density_components_model_driving_dist_plots)
+
+dev.off()
+
+pdf("visualizations/total_strokes_ME.pdf")
+
+air_density_model_round_score_plots <- me_plots(air_density_model_round_score, c("air_density", "avg_dew_point", "avg_wind_speed", "avg_wind_gust",  "sum_precipitation"))
+
+ggarrange(plotlist = air_density_model_round_score_plots)
+
+air_density_components_model_round_score_plots <- me_plots(air_density_components_model_round_score, c("elevation","avg_temperature", "avg_humidity" , "avg_pressure" , "avg_dew_point" ,"avg_wind_speed" , "avg_wind_gust", "sum_precipitation"))
+
+ggarrange(plotlist = air_density_components_model_round_score_plots)
+
+dev.off()
+
+```
+
+
+
+
+
+```{r}
+
+round_level_data %>% gather(true_sg_type, true_sg, true_sg_ott, true_sg_app, true_sg_arg, true_sg_putt)  -> round_level_data_sg_type
+
+round_level_data_sg_type %>% mutate(teetimeinmin2 = teetimeinmin * teetimeinmin) %>% lm(formula = true_sg ~ air_density:true_sg_type +  avg_dew_point:true_sg_type + avg_wind_speed:true_sg_type + avg_wind_gust:true_sg_type + avg_humidity:true_sg_type + sum_precipitation:true_sg_type + teetimeinmin:true_sg_type + I(teetimeinmin^2):true_sg_type + factor(round_num):true_sg_type, data = .) -> air_density_model_sg_types
+
+
+air_density_model_sg_types_plots <- me_plots(air_density_model_sg_types, c("air_density", "avg_dew_point", "avg_wind_speed", "avg_wind_gust", "avg_humidity", "sum_precipitation", "teetimeinmin"),"true_sg_type")
+
+pdf("visualizations/air_density_model_sg_types.pdf")
+ggarrange(plotlist = air_density_model_sg_types_plots)
+dev.off()
+
+```
+
+
+
+
+```{r}
+round_level_data %>% lm(formula = true_sg_ott ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_sg_ott
+
+round_level_data %>% lm(formula = true_sg_app ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_sg_app
+
+round_level_data %>% lm(formula = true_sg_arg ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation +  factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_sg_arg
+
+round_level_data %>% lm(formula = true_sg_putt ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation +factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_sg_putt
+
+
+tab_model(air_density_model_sg_ott, air_density_model_sg_app, air_density_model_sg_arg, air_density_model_sg_putt, digits = 3, rm.terms = player_fe, file = "tables/sg_air_density.html")
+
+tab_model(air_density_model_sg_ott, air_density_model_sg_app, air_density_model_sg_arg, air_density_model_sg_putt, digits = 3, rm.terms = player_fe, file = "tables/sg_air_density.doc")
+
+saveRDS(air_density_model_sg_ott,"models/air_density_model_sg_ott_player_FE.RDS")
+
+saveRDS(air_density_model_sg_app,"models/air_density_model_sg_app_player_FE.RDS")
+
+saveRDS(air_density_model_sg_arg,"models/air_density_model_sg_arg_player_FE.RDS")
+
+saveRDS(air_density_model_sg_putt,"models/air_density_model_sg_putt_player_FE.RDS")
+
+
+
+```
+
+
+```{r}
+
+
+
+round_level_data %>% lm(formula = true_sg_ott ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + player_name, data = .) -> air_density_components_model_sg_ott
+
+round_level_data %>% lm(formula = true_sg_app ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + player_name, data = .) -> air_density_components_model_sg_app
+
+round_level_data %>% lm(formula = true_sg_arg ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + player_name, data = .) -> air_density_components_model_sg_arg
+
+round_level_data %>% lm(formula = true_sg_putt ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + player_name, data = .) -> air_density_components_model_sg_putt
+
+tab_model(air_density_components_model_sg_ott, air_density_components_model_sg_app, air_density_components_model_sg_arg, air_density_components_model_sg_putt, digits = 4, rm.terms = player_fe, file = "tables/sg_components.html")
+
+tab_model(air_density_components_model_sg_ott, air_density_components_model_sg_app, air_density_components_model_sg_arg, air_density_components_model_sg_putt, digits = 4, rm.terms = player_fe, file = "tables/sg_components.doc")
+
+saveRDS(air_density_components_model_sg_ott,"models/air_density_components_model_sg_ott_player_FE.RDS")
+
+saveRDS(air_density_components_model_sg_app,"models/air_density_components_model_sg_app_player_FE.RDS")
+
+saveRDS(air_density_components_model_sg_arg,"models/air_density_components_model_sg_arg_player_FE.RDS")
+
+saveRDS(air_density_components_model_sg_putt,"models/air_density_components_model_sg_putt_player_FE.RDS")
+
+
+
+```
+
+```{r}
+
+round_level_data %>% lm(formula = driving_dist ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name + course_name, data = .) -> air_density_model_driving_dist
+
+
+
+round_level_data %>% filter(!is.na(driving_dist)) %>% lm(formula = driving_dist ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_driving_dist
+
+round_level_data %>% filter(!is.na(driving_acc)) %>% lm(formula = driving_acc ~ air_density +  avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_model_driving_acc
+
+round_level_data %>% filter(!is.na(driving_dist))  %>% lm(formula = driving_dist ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_driving_dist
+
+round_level_data %>% filter(!is.na(driving_acc)) %>% lm(formula = driving_acc ~ avg_pressure + avg_temperature + elevation + avg_dew_point + avg_wind_speed + avg_wind_gust + avg_humidity + sum_precipitation + teetimeinmin + factor(round_num) + factor(year) + player_name, data = .) -> air_density_components_model_driving_acc
+
+
+tab_model(air_density_model_driving_dist, air_density_components_model_driving_dist, digits = 4, rm.terms = player_fe, file = "tables/driving_distance_air_density_and_comp.doc", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE)
+
+tab_model(air_density_model_driving_acc, air_density_components_model_driving_acc, digits = 4, rm.terms = player_fe, file = "tables/driving_acc_air_density_and_comp.doc", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE)
+
+
+tab_model(air_density_model_driving_dist, air_density_model_driving_acc, air_density_components_model_driving_dist, air_density_components_model_driving_acc, digits = 4, rm.terms = player_fe, file = "tables/driving_air_density.doc", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE)
+
+tab_model(air_density_model_driving_dist, air_density_model_driving_acc, air_density_components_model_driving_dist, air_density_components_model_driving_acc, digits = 4, rm.terms = player_fe, file = "tables/driving_air_density.html", vcov.fun = "CL", vcov.args = list(type = "HC3"), show.se = TRUE) 
+
+
+saveRDS(air_density_model_driving_dist,"models/air_density_model_driving_dist_player_FE.RDS")
+
+saveRDS(air_density_model_driving_acc,"models/air_density_model_driving_acc_player_FE.RDS")
+
+saveRDS(air_density_components_model_driving_dist,"models/air_density_components_model_driving_dist_player_FE.RDS")
+
+saveRDS(air_density_components_model_driving_acc,"models/air_density_components_model_driving_acc_player_FE.RDS")
+
+
+
+
+```
+
